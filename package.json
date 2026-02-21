@@ -1,0 +1,21 @@
+{
+  "name": "anime-downloader",
+  "version": "1.0.0",
+  "description": "Cross-platform anime downloader with GUI - search, browse, and download anime episodes",
+  "main": "dist/src/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron ."
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.19.11",
+    "electron": "^33.0.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0"
+  }
+}

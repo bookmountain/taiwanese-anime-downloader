@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' https: http: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self';"
+    />
+    <title>Anime Downloader</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- ═══ Top Navigation Bar ═══ -->
+    <header id="navbar">
+      <div class="nav-left">
+        <button id="btn-back" class="nav-btn hidden" title="Back">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <div class="logo">
+          <span class="logo-icon">🍉</span>
+          <span class="logo-text">Anime Downloader</span>
+        </div>
+      </div>
+      <div class="nav-center">
+        <div class="search-box">
+          <svg
+            class="search-icon"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+          <input
+            type="text"
+            id="search-input"
+            placeholder="搜索動漫名稱..."
+            autocomplete="off"
+          />
+          <button id="btn-search" class="search-submit">搜索</button>
+        </div>
+      </div>
+      <div class="nav-right">
+        <button
+          id="btn-goto-download"
+          class="btn btn-outline btn-small hidden"
+          title="查看下載進度"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          <span>查看下載</span>
+        </button>
+        <div id="dep-status" class="dep-status"></div>
+      </div>
+    </header>
+
+    <!-- ═══ Main Content Area ═══ -->
+    <main id="content">
+      <!-- Search/Home View -->
+      <section id="view-search" class="view active">
+        <div id="search-welcome" class="welcome">
+          <div class="welcome-icon">🎬</div>
+          <h2>搜索動漫開始下載</h2>
+          <p>輸入動漫名稱搜索，選擇劇集，然後一鍵下載</p>
+        </div>
+        <div id="search-loading" class="loading hidden">
+          <div class="spinner"></div>
+          <p>正在搜索...</p>
+        </div>
+        <div id="search-error" class="error-msg hidden"></div>
+        <div id="search-results" class="results-grid"></div>
+      </section>
+
+      <!-- Detail View -->
+      <section id="view-detail" class="view">
+        <div id="detail-loading" class="loading hidden">
+          <div class="spinner"></div>
+          <p>正在加載詳情...</p>
+        </div>
+        <div id="detail-content" class="detail-layout">
+          <aside class="detail-sidebar">
+            <div class="detail-cover">
+              <img id="detail-image" src="" alt="" />
+            </div>
+            <div class="detail-meta">
+              <p id="detail-update" class="meta-label"></p>
+              <p id="detail-status" class="meta-label"></p>
+            </div>
+          </aside>
+          <div class="detail-main">
+            <div class="detail-tags" id="detail-tags"></div>
+            <h1 id="detail-title"></h1>
+            <p id="detail-desc" class="detail-description"></p>
+
+            <!-- Download Controls -->
+            <div class="download-controls">
+              <div class="folder-picker">
+                <button id="btn-folder" class="btn btn-outline">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                    />
+                  </svg>
+                  <span>選擇下載位置</span>
+                </button>
+                <span id="folder-path" class="folder-path">未選擇</span>
+              </div>
+              <div class="download-actions">
+                <button id="btn-select-all" class="btn btn-small">全選</button>
+                <button id="btn-deselect-all" class="btn btn-small">
+                  取消全選
+                </button>
+                <button id="btn-download" class="btn btn-primary" disabled>
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  <span>開始下載</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Season Tabs -->
+            <div id="season-tabs" class="season-tabs"></div>
+
+            <!-- Episode List -->
+            <div id="episode-list" class="episode-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Download View -->
+      <section id="view-download" class="view">
+        <div class="download-header">
+          <h2 id="download-title">下載進度</h2>
+          <div class="download-header-actions">
+            <button id="btn-cancel-download" class="btn btn-danger">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              </svg>
+              <span>取消下載</span>
+            </button>
+          </div>
+        </div>
+        <div id="download-overall" class="overall-progress">
+          <div class="overall-bar">
+            <div id="overall-fill" class="overall-fill"></div>
+          </div>
+          <span id="overall-text" class="overall-text">0%</span>
+        </div>
+        <div id="download-log" class="download-log"></div>
+        <div id="download-episodes" class="download-episodes"></div>
+      </section>
+    </main>
+
+    <script src="../dist/renderer/src/app.js" type="module"></script>
+  </body>
+</html>
