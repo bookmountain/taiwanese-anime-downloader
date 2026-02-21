@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog } from "electron";
 import * as path from "path";
+import * as fs from "fs";
 import * as https from "https";
 import * as http from "http";
 import { spawn, execSync, ChildProcess } from "child_process";
@@ -43,6 +44,7 @@ interface DownloadOptions {
   episodes: Episode[];
   outputDir: string;
   detailUrl: string;
+  seasonName: string;
 }
 
 interface ProgressData {
@@ -454,6 +456,7 @@ interface QueueItem {
 
 const downloadQueue: QueueItem[] = [];
 let activeDownloadProcess: ChildProcess | null = null;
+let activeOutputDir: string | null = null;
 let queueProcessing = false;
 
 function startDownload(win: BrowserWindow, options: DownloadOptions): void {
@@ -472,7 +475,22 @@ function processQueue(): void {
   queueProcessing = true;
   const current = downloadQueue[0]; // Peek at the first item
   const { win, options } = current;
-  const { cartoonId, episodes, outputDir } = options;
+  const { cartoonId, episodes, outputDir, seasonName } = options;
+
+  // Add season subfolder to output directory
+  let finalOutputDir = outputDir;
+  if (seasonName) {
+    const safeSeason = seasonName
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "")
+      .replace(/[＜＞：＂／＼｜？＊]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/[. ]+$/, "");
+    if (safeSeason) {
+      finalOutputDir = path.join(outputDir, safeSeason);
+    }
+  }
+  activeOutputDir = finalOutputDir;
 
   // Build a video URL from the first episode
   const firstEp = episodes[0];
@@ -498,7 +516,7 @@ function processQueue(): void {
     "download_episodes.py",
   );
 
-  const args: string[] = [scriptPath, videoUrl, outputDir];
+  const args: string[] = [scriptPath, videoUrl, finalOutputDir];
 
   if (episodes.length > 0) {
     const numbers = episodes.map((e) => e.number);
@@ -594,6 +612,7 @@ function processQueue(): void {
 
   proc.on("close", (code: number | null) => {
     activeDownloadProcess = null;
+    activeOutputDir = null;
     win.webContents.send("download-complete", { code: code ?? 1 });
 
     // Remove the completed item and process the next one
@@ -603,6 +622,7 @@ function processQueue(): void {
 
   proc.on("error", (err: Error) => {
     activeDownloadProcess = null;
+    activeOutputDir = null;
     win.webContents.send("download-error", err.message);
 
     downloadQueue.shift();
@@ -691,9 +711,47 @@ ipcMain.handle("cancel-download", async () => {
   // Clear the queue so we don't start the next one
   downloadQueue.length = 0;
 
+  // Capture the output dir before clearing state
+  const dirToClean = activeOutputDir;
+
   if (activeDownloadProcess) {
     activeDownloadProcess.kill("SIGTERM");
     activeDownloadProcess = null;
+    activeOutputDir = null;
+
+    // Clean up incomplete files in the output directory
+    if (dirToClean) {
+      try {
+        const metadataPath = path.join(dirToClean, ".download_metadata.json");
+        let completedFiles: Record<string, any> = {};
+        try {
+          const raw = fs.readFileSync(metadataPath, "utf-8");
+          const meta = JSON.parse(raw);
+          completedFiles = meta.completed || {};
+        } catch {
+          // No metadata file — treat all files as incomplete
+        }
+
+        // Delete any .mp4 files that are not in the completed metadata
+        if (fs.existsSync(dirToClean)) {
+          const files = fs.readdirSync(dirToClean);
+          for (const file of files) {
+            if (file.endsWith(".mp4") && !(file in completedFiles)) {
+              const filePath = path.join(dirToClean, file);
+              try {
+                fs.unlinkSync(filePath);
+                console.log(`[Cancel] Deleted incomplete file: ${file}`);
+              } catch (e) {
+                console.error(`[Cancel] Failed to delete ${file}:`, e);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[Cancel] Cleanup error:", e);
+      }
+    }
+
     return { success: true };
   }
   return { success: false, error: "No active download" };

@@ -16,6 +16,7 @@ interface DownloadOptions {
   episodes: Array<{ number: number; title: string; href: string }>;
   outputDir: string;
   detailUrl: string;
+  seasonName: string;
 }
 
 interface ApiResult<T> {

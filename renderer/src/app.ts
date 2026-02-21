@@ -374,7 +374,18 @@ function getOutputDir(baseFolder?: string | null): string {
   if (state.animeDetail) {
     const safeName = sanitizeFolderName(state.animeDetail.title);
     if (safeName) {
-      return `${folder}/${safeName}`;
+      const basePath = `${folder}/${safeName}`;
+      // Add season subfolder if there are multiple seasons
+      if (state.animeDetail.seasons.length > 1) {
+        const seasonName = state.animeDetail.seasons[state.activeSeason]?.name;
+        if (seasonName) {
+          const safeSeason = sanitizeFolderName(seasonName);
+          if (safeSeason) {
+            return `${basePath}/${safeSeason}`;
+          }
+        }
+      }
+      return basePath;
     }
   }
   return folder;
@@ -450,12 +461,16 @@ async function startDownloadFlow(): Promise<void> {
   // Build output dir with title subfolder
   const outputDir = getOutputDir();
 
+  // Get the active season name for subfolder creation
+  const seasonName = state.animeDetail.seasons[state.activeSeason]?.name || "";
+
   // Start download
   const result = await window.api.startDownload({
     cartoonId: state.animeDetail.cartoonId,
     episodes: selectedEps,
     outputDir: outputDir,
     detailUrl: state.animeDetail.detailUrl,
+    seasonName: seasonName,
   });
 
   if (!result.success) {

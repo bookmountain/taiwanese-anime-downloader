@@ -42,6 +42,7 @@ interface DownloadOptions {
   episodes: Episode[];
   outputDir: string;
   detailUrl: string;
+  seasonName: string;
 }
 
 interface ProgressData {

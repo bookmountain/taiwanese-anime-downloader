@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,23 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
+# Global reference to the file currently being downloaded, for cleanup on SIGTERM
+_current_download_path: Optional[str] = None
+
+
+def _sigterm_handler(signum, frame):
+    """Handle SIGTERM by cleaning up the in-progress download file."""
+    global _current_download_path
+    if _current_download_path and os.path.exists(_current_download_path):
+        try:
+            os.remove(_current_download_path)
+            print(f"\n[SIGTERM] Deleted incomplete file: {_current_download_path}", flush=True)
+        except Exception:
+            pass
+    sys.exit(143)  # 128 + 15 (SIGTERM)
+
+
+signal.signal(signal.SIGTERM, _sigterm_handler)
 
 class ProgressBar:
     """Single-line console progress bar for downloads."""
@@ -391,6 +409,10 @@ class VideoDownloader:
         filename = f"{episode.number:03d}_{episode.title}.mp4"
         output_path = os.path.join(self.output_dir, filename)
         
+        # Track current file for SIGTERM cleanup
+        global _current_download_path
+        _current_download_path = output_path
+        
         # Get video duration from m3u8 playlist
         duration = self._get_m3u8_duration(episode.m3u8_url)
         
@@ -453,6 +475,7 @@ class VideoDownloader:
                     # Save to metadata for resume detection
                     self._mark_complete(filename, final_size)
                 progress.finish(success=True)
+                _current_download_path = None
                 return True
             else:
                 stderr = process.stderr.read()
@@ -461,6 +484,7 @@ class VideoDownloader:
                 # Clean up partial file
                 if os.path.exists(output_path):
                     os.remove(output_path)
+                _current_download_path = None
                 return False
                 
         except subprocess.TimeoutExpired:
@@ -468,6 +492,7 @@ class VideoDownloader:
             print(f"  [ERROR] Timeout")
             if os.path.exists(output_path):
                 os.remove(output_path)
+            _current_download_path = None
             return False
         except FileNotFoundError:
             print("[ERROR] ffmpeg not found. Please install ffmpeg and add it to PATH.")
