@@ -1,10 +1,16 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, screen } from "electron";
 import * as path from "path";
 import * as fs from "fs";
 import * as https from "https";
 import * as http from "http";
 import { spawn, execSync, ChildProcess } from "child_process";
 import * as cheerio from "cheerio";
+
+if (process.env.ENABLE_HARDWARE_ACCELERATION !== "1") {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch("disable-gpu");
+  app.commandLine.appendSwitch("disable-gpu-compositing");
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -48,6 +54,7 @@ interface DownloadOptions {
 }
 
 interface ProgressData {
+  cartoonId?: string;
   episode: number;
   percent: number;
   downloaded?: string;
@@ -466,6 +473,40 @@ function startDownload(win: BrowserWindow, options: DownloadOptions): void {
   }
 }
 
+function startFakeDownload(win: BrowserWindow, options: DownloadOptions): void {
+  const { cartoonId, episodes } = options;
+  win.webContents.send(
+    "download-log",
+    `[INFO] E2E fake download: ${cartoonId} (${episodes.length} episodes)`,
+  );
+
+  episodes.forEach((episode, index) => {
+    setTimeout(() => {
+      win.webContents.send("download-progress", {
+        cartoonId,
+        episode: episode.number,
+        percent: 50,
+        status: "downloading",
+        speed: "E2E",
+        eta: "00:01",
+      } as ProgressData);
+    }, 10 + index * 20);
+
+    setTimeout(() => {
+      win.webContents.send("download-progress", {
+        cartoonId,
+        episode: episode.number,
+        percent: 100,
+        status: "done",
+      } as ProgressData);
+    }, 30 + index * 20);
+  });
+
+  setTimeout(() => {
+    win.webContents.send("download-complete", { code: 0 });
+  }, 50 + episodes.length * 20);
+}
+
 function processQueue(): void {
   if (downloadQueue.length === 0) {
     queueProcessing = false;
@@ -634,12 +675,81 @@ function processQueue(): void {
 
 let mainWindow: BrowserWindow | null = null;
 
+const DEFAULT_WINDOW_SIZE = {
+  width: 1200,
+  height: 800,
+  minWidth: 760,
+  minHeight: 520,
+};
+
+function isWslRuntime(): boolean {
+  return (
+    process.platform === "linux" &&
+    Boolean(
+      process.env.WSL_DISTRO_NAME ||
+        process.env.WSL_INTEROP ||
+        process.env.WSL2_GUI_APPS_ENABLED,
+    )
+  );
+}
+
+function parseWindowSize(
+  value: string | undefined,
+): { width: number; height: number } | null {
+  const match = value?.match(/^(\d+)x(\d+)$/);
+  if (!match) return null;
+
+  return {
+    width: parseInt(match[1], 10),
+    height: parseInt(match[2], 10),
+  };
+}
+
+function getWindowSize(width: number, height: number): {
+  width: number;
+  height: number;
+  minWidth: number;
+  minHeight: number;
+} {
+  return {
+    width,
+    height,
+    minWidth: Math.min(DEFAULT_WINDOW_SIZE.minWidth, width),
+    minHeight: Math.min(DEFAULT_WINDOW_SIZE.minHeight, height),
+  };
+}
+
+function getWorkAreaSize(): { width: number; height: number } {
+  const override = parseWindowSize(process.env.E2E_WORK_AREA_SIZE);
+  if (override) {
+    return override;
+  }
+  return screen.getPrimaryDisplay().workAreaSize;
+}
+
+function getInitialWindowSize(): {
+  width: number;
+  height: number;
+  minWidth: number;
+  minHeight: number;
+} {
+  const explicitSize = parseWindowSize(process.env.ANIME_DOWNLOADER_WINDOW_SIZE);
+  if (explicitSize) return getWindowSize(explicitSize.width, explicitSize.height);
+
+  if (isWslRuntime()) return DEFAULT_WINDOW_SIZE;
+
+  const workArea = getWorkAreaSize();
+  const width = Math.min(DEFAULT_WINDOW_SIZE.width, Math.floor(workArea.width * 0.9));
+  const height = Math.min(DEFAULT_WINDOW_SIZE.height, Math.floor(workArea.height * 0.9));
+
+  return getWindowSize(width, height);
+}
+
 function createWindow(): void {
+  const windowSize = getInitialWindowSize();
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
+    ...windowSize,
+    center: true,
     title: "Anime Downloader",
     backgroundColor: "#f5f5f7",
     webPreferences: {
@@ -688,6 +798,7 @@ ipcMain.handle("get-detail", async (_event, url: string) => {
 });
 
 ipcMain.handle("select-folder", async () => {
+  if (process.env.E2E_DOWNLOAD_DIR) return process.env.E2E_DOWNLOAD_DIR;
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openDirectory", "createDirectory"],
@@ -700,6 +811,10 @@ ipcMain.handle("select-folder", async () => {
 ipcMain.handle("start-download", async (_event, options: DownloadOptions) => {
   if (!mainWindow) return { success: false, error: "No window" };
   try {
+    if (process.env.E2E_FAKE_DOWNLOAD === "1") {
+      startFakeDownload(mainWindow, options);
+      return { success: true };
+    }
     startDownload(mainWindow, options);
     return { success: true };
   } catch (err: any) {

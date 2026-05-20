@@ -9,7 +9,7 @@
 
 interface AppState {
   currentView: "search" | "detail" | "download";
-  selectedEpisodes: Set<number>;
+  selectedEpisodes: Set<string>;
   downloadFolder: string | null;
   animeDetail: AnimeDetail | null;
   activeSeason: number;
@@ -83,6 +83,10 @@ function escapeHtml(str: string): string {
   return div.innerHTML;
 }
 
+function escapeAttr(str: string): string {
+  return escapeHtml(str).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 /** Sanitize a string for use as a folder/file name on all OS */
 function sanitizeFolderName(name: string): string {
   return (
@@ -96,6 +100,22 @@ function sanitizeFolderName(name: string): string {
       .trim()
       // Don't end with a dot or space (Windows issue)
       .replace(/[. ]+$/, "")
+  );
+}
+
+function getEpisodeKey(seasonIndex: number, episode: Episode): string {
+  return `${seasonIndex}:${episode.href || episode.number}`;
+}
+
+function getActiveSeason(): Season | null {
+  return state.animeDetail?.seasons[state.activeSeason] || null;
+}
+
+function getSelectedEpisodesForSeason(seasonIndex: number): Episode[] {
+  const season = state.animeDetail?.seasons[seasonIndex];
+  if (!season) return [];
+  return season.episodes.filter((ep) =>
+    state.selectedEpisodes.has(getEpisodeKey(seasonIndex, ep)),
   );
 }
 
@@ -291,23 +311,27 @@ function renderDetail(detail: AnimeDetail): void {
 function renderEpisodes(episodes: Episode[]): void {
   dom.episodeList.innerHTML = episodes
     .map(
-      (ep) => `
-    <div class="episode-item${state.selectedEpisodes.has(ep.number) ? " selected" : ""}" data-num="${ep.number}">
+      (ep) => {
+        const key = getEpisodeKey(state.activeSeason, ep);
+        return `
+    <div class="episode-item${state.selectedEpisodes.has(key) ? " selected" : ""}" data-num="${ep.number}" data-key="${escapeAttr(key)}">
       <div class="episode-checkbox"></div>
       <span class="episode-title">${escapeHtml(ep.title)}</span>
     </div>
-  `,
+  `;
+      },
     )
     .join("");
 
   dom.episodeList.querySelectorAll(".episode-item").forEach((item) => {
     item.addEventListener("click", () => {
-      const num = parseInt((item as HTMLElement).dataset.num || "0");
-      if (state.selectedEpisodes.has(num)) {
-        state.selectedEpisodes.delete(num);
+      const key = (item as HTMLElement).dataset.key;
+      if (!key) return;
+      if (state.selectedEpisodes.has(key)) {
+        state.selectedEpisodes.delete(key);
         item.classList.remove("selected");
       } else {
-        state.selectedEpisodes.add(num);
+        state.selectedEpisodes.add(key);
         item.classList.add("selected");
       }
       updateDownloadButton();
@@ -316,14 +340,15 @@ function renderEpisodes(episodes: Episode[]): void {
 }
 
 function updateDownloadButton(): void {
-  const hasSelection = state.selectedEpisodes.size > 0;
+  const selectedCount = getSelectedEpisodesForSeason(state.activeSeason).length;
+  const hasSelection = selectedCount > 0;
   const hasFolder = !!state.downloadFolder;
   dom.btnDownload.disabled = !(hasSelection && hasFolder);
 
   const label = dom.btnDownload.querySelector("span");
   if (label) {
     label.textContent = hasSelection
-      ? `下載 ${state.selectedEpisodes.size} 集`
+      ? `下載 ${selectedCount} 集`
       : "開始下載";
   }
 }
@@ -333,10 +358,12 @@ function updateDownloadButton(): void {
 dom.btnSelectAll.addEventListener("click", () => {
   if (!state.animeDetail) return;
 
-  // Select ALL episodes across ALL seasons
-  state.animeDetail.seasons.forEach((season) => {
-    season.episodes.forEach((ep) => state.selectedEpisodes.add(ep.number));
-  });
+  const season = getActiveSeason();
+  if (!season) return;
+
+  season.episodes.forEach((ep) =>
+    state.selectedEpisodes.add(getEpisodeKey(state.activeSeason, ep)),
+  );
 
   // Visually mark the currently displayed episodes as selected
   dom.episodeList
@@ -401,9 +428,7 @@ async function startDownloadFlow(): Promise<void> {
   const season = state.animeDetail.seasons[state.activeSeason];
   if (!season) return;
 
-  const selectedEps = season.episodes.filter((ep) =>
-    state.selectedEpisodes.has(ep.number),
-  );
+  const selectedEps = getSelectedEpisodesForSeason(state.activeSeason);
   if (selectedEps.length === 0) return;
 
   // Immediately disable button to prevent double-click double-queueing

@@ -5,12 +5,15 @@
   "main": "dist/src/main.js",
   "scripts": {
     "build": "tsc",
-    "start": "npm run build && electron .",
-    "dev": "npm run build && electron ."
+    "start": "npm run build && electron --disable-gpu --disable-gpu-compositing .",
+    "dev": "npm run build && electron --disable-gpu --disable-gpu-compositing .",
+    "test:e2e": "npm run build && playwright test",
+    "test:e2e:headed": "npm run build && playwright test --headed"
   },
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "^22.19.11",
     "electron": "^33.0.0",
     "typescript": "^5.7.0"

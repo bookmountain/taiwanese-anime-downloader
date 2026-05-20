@@ -94,14 +94,12 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
-  -webkit-app-region: drag;
 }
 
 .nav-left {
   display: flex;
   align-items: center;
   gap: 12px;
-  -webkit-app-region: no-drag;
 }
 
 .nav-btn {
@@ -142,7 +140,6 @@ body {
   flex: 1;
   max-width: 500px;
   margin: 0 32px;
-  -webkit-app-region: no-drag;
 }
 
 .search-box {
@@ -194,7 +191,6 @@ body {
 }
 
 .nav-right {
-  -webkit-app-region: no-drag;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -745,7 +741,44 @@ body {
 }
 
 /* ─── Responsive ──────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
+@media (max-width: 960px) {
+  #navbar {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 10px 14px;
+  }
+  .logo-text {
+    font-size: 16px;
+  }
+  .nav-center {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+    margin: 0;
+  }
+  .nav-right {
+    margin-left: auto;
+  }
+  #content {
+    padding: 16px;
+  }
+  .results-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px;
+  }
+  .detail-layout {
+    grid-template-columns: 200px 1fr;
+    gap: 20px;
+  }
+  .download-controls {
+    align-items: stretch;
+  }
+  .folder-path {
+    max-width: none;
+  }
+}
+
+@media (max-width: 820px) {
   .detail-layout {
     grid-template-columns: 1fr;
   }

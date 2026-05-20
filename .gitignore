@@ -4,3 +4,6 @@ dist/
 *.js.map
 .DS_Store
 Thumbs.db
+.venv
+test-results/
+playwright-report/
