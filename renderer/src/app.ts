@@ -13,9 +13,16 @@ interface AppState {
   downloadFolder: string | null;
   animeDetail: AnimeDetail | null;
   activeSeason: number;
-  downloadEpisodes: Episode[];
+  downloadEpisodes: DownloadEpisode[];
   episodeProgress: Map<string, ProgressData>;
   isDownloading: boolean;
+}
+
+interface DownloadEpisode {
+  seasonIndex: number;
+  seasonName: string;
+  progressId: string;
+  episode: Episode;
 }
 
 const state: AppState = {
@@ -107,16 +114,54 @@ function getEpisodeKey(seasonIndex: number, episode: Episode): string {
   return `${seasonIndex}:${episode.href || episode.number}`;
 }
 
+function getSeasonProgressId(seasonIndex: number): string {
+  return `${state.animeDetail?.cartoonId || "anime"}-s${seasonIndex}`;
+}
+
+function getProgressKey(progressId: string, episodeNumber: number): string {
+  return `${progressId}-${episodeNumber}`;
+}
+
 function getActiveSeason(): Season | null {
   return state.animeDetail?.seasons[state.activeSeason] || null;
 }
 
-function getSelectedEpisodesForSeason(seasonIndex: number): Episode[] {
+function toDownloadEpisode(
+  seasonIndex: number,
+  season: Season,
+  episode: Episode,
+): DownloadEpisode {
+  return {
+    seasonIndex,
+    seasonName: season.name,
+    progressId: getSeasonProgressId(seasonIndex),
+    episode,
+  };
+}
+
+function getSelectedEpisodesForSeason(seasonIndex: number): DownloadEpisode[] {
   const season = state.animeDetail?.seasons[seasonIndex];
   if (!season) return [];
-  return season.episodes.filter((ep) =>
-    state.selectedEpisodes.has(getEpisodeKey(seasonIndex, ep)),
+  return season.episodes
+    .filter((ep) => state.selectedEpisodes.has(getEpisodeKey(seasonIndex, ep)))
+    .map((ep) => toDownloadEpisode(seasonIndex, season, ep));
+}
+
+function getAllSelectedEpisodes(): DownloadEpisode[] {
+  if (!state.animeDetail) return [];
+  return state.animeDetail.seasons.flatMap((_season, seasonIndex) =>
+    getSelectedEpisodesForSeason(seasonIndex),
   );
+}
+
+function groupBySeason(episodes: DownloadEpisode[]): DownloadEpisode[][] {
+  const groups = new Map<number, DownloadEpisode[]>();
+  for (const item of episodes) {
+    const seasonGroup = groups.get(item.seasonIndex) || [];
+    seasonGroup.push(item);
+    groups.set(item.seasonIndex, seasonGroup);
+  }
+  return Array.from(groups.values());
 }
 
 // ─── Navigation ───────────────────────────────────────────────────────────
@@ -286,6 +331,7 @@ function renderDetail(detail: AnimeDetail): void {
           .forEach((t) => t.classList.remove("active"));
         tab.classList.add("active");
         renderEpisodes(detail.seasons[idx].episodes);
+        updateFolderPath();
         updateDownloadButton();
       });
     });
@@ -299,11 +345,7 @@ function renderDetail(detail: AnimeDetail): void {
   }
 
   // Auto-update display path if base folder already chosen
-  if (state.downloadFolder) {
-    const displayPath = getOutputDir(state.downloadFolder);
-    dom.folderPath.textContent = displayPath;
-    dom.folderPath.title = displayPath;
-  }
+  updateFolderPath();
 
   updateDownloadButton();
 }
@@ -340,7 +382,7 @@ function renderEpisodes(episodes: Episode[]): void {
 }
 
 function updateDownloadButton(): void {
-  const selectedCount = getSelectedEpisodesForSeason(state.activeSeason).length;
+  const selectedCount = getAllSelectedEpisodes().length;
   const hasSelection = selectedCount > 0;
   const hasFolder = !!state.downloadFolder;
   dom.btnDownload.disabled = !(hasSelection && hasFolder);
@@ -386,36 +428,44 @@ dom.btnFolder.addEventListener("click", async () => {
   const folder = await window.api.selectFolder();
   if (folder) {
     state.downloadFolder = folder;
-    // Show folder path with title subfolder appended
-    const displayPath = getOutputDir(folder);
-    dom.folderPath.textContent = displayPath;
-    dom.folderPath.title = displayPath;
+    updateFolderPath();
     updateDownloadButton();
   }
 });
 
-/** Build the output directory: base folder + sanitized anime title */
-function getOutputDir(baseFolder?: string | null): string {
+function updateFolderPath(): void {
+  if (!state.downloadFolder) return;
+  const displayPath = getOutputDir(state.downloadFolder);
+  dom.folderPath.textContent = displayPath;
+  dom.folderPath.title = displayPath;
+}
+
+/** Build the output directory root: base folder + sanitized anime title */
+function getAnimeOutputDir(baseFolder?: string | null): string {
   const folder = baseFolder || state.downloadFolder;
   if (!folder) return "";
   if (state.animeDetail) {
     const safeName = sanitizeFolderName(state.animeDetail.title);
     if (safeName) {
-      const basePath = `${folder}/${safeName}`;
-      // Add season subfolder if there are multiple seasons
-      if (state.animeDetail.seasons.length > 1) {
-        const seasonName = state.animeDetail.seasons[state.activeSeason]?.name;
-        if (seasonName) {
-          const safeSeason = sanitizeFolderName(seasonName);
-          if (safeSeason) {
-            return `${basePath}/${safeSeason}`;
-          }
-        }
-      }
-      return basePath;
+      return `${folder}/${safeName}`;
     }
   }
   return folder;
+}
+
+/** Build the display output directory, including the active season when present. */
+function getOutputDir(
+  baseFolder?: string | null,
+  seasonIndex = state.activeSeason,
+): string {
+  const basePath = getAnimeOutputDir(baseFolder);
+  if (!basePath || !state.animeDetail || state.animeDetail.seasons.length <= 1) {
+    return basePath;
+  }
+
+  const seasonName = state.animeDetail.seasons[seasonIndex]?.name;
+  const safeSeason = seasonName ? sanitizeFolderName(seasonName) : "";
+  return safeSeason ? `${basePath}/${safeSeason}` : basePath;
 }
 
 // ─── Download ─────────────────────────────────────────────────────────────
@@ -425,10 +475,7 @@ dom.btnDownload.addEventListener("click", startDownloadFlow);
 async function startDownloadFlow(): Promise<void> {
   if (!state.animeDetail || !state.downloadFolder) return;
 
-  const season = state.animeDetail.seasons[state.activeSeason];
-  if (!season) return;
-
-  const selectedEps = getSelectedEpisodesForSeason(state.activeSeason);
+  const selectedEps = getAllSelectedEpisodes();
   if (selectedEps.length === 0) return;
 
   // Immediately disable button to prevent double-click double-queueing
@@ -436,6 +483,8 @@ async function startDownloadFlow(): Promise<void> {
 
   // Switch to download view
   showView("download");
+
+  const shouldResetLog = state.downloadEpisodes.length === 0;
 
   // Track the *newly added* episodes globally
   state.downloadEpisodes.push(...selectedEps);
@@ -446,7 +495,7 @@ async function startDownloadFlow(): Promise<void> {
   dom.overallText.textContent = "0%";
   // Only clear the log if this is the FIRST item in the queue,
   // otherwise let the log keep appending.
-  if (state.downloadEpisodes.length === selectedEps.length) {
+  if (shouldResetLog) {
     dom.downloadLog.innerHTML = "";
     state.episodeProgress.clear();
   }
@@ -458,18 +507,25 @@ async function startDownloadFlow(): Promise<void> {
   // Append to the list instead of replacing
   const newHtml = selectedEps
     .map(
-      (ep) => `
+      (item) => {
+        const rowId = getProgressKey(item.progressId, item.episode.number);
+        const seasonPrefix =
+          state.animeDetail!.seasons.length > 1
+            ? `${item.seasonName} - `
+            : "";
+        return `
     <div class="dl-ep-item">
       <div class="dl-ep-header">
-        <span class="dl-ep-title">${escapeHtml(state.animeDetail!.title)} - ${escapeHtml(ep.title)}</span>
-        <span class="dl-ep-status" id="status-${state.animeDetail!.cartoonId}-${ep.number}">等待中...</span>
+        <span class="dl-ep-title">${escapeHtml(state.animeDetail!.title)} - ${escapeHtml(seasonPrefix)}${escapeHtml(item.episode.title)}</span>
+        <span class="dl-ep-status" id="status-${escapeAttr(rowId)}">等待中...</span>
       </div>
       <div class="dl-ep-bar">
-        <div class="dl-ep-fill" id="fill-${state.animeDetail!.cartoonId}-${ep.number}"></div>
+        <div class="dl-ep-fill" id="fill-${escapeAttr(rowId)}"></div>
       </div>
-      <div class="dl-ep-info" id="info-${state.animeDetail!.cartoonId}-${ep.number}">等待開始</div>
+      <div class="dl-ep-info" id="info-${escapeAttr(rowId)}">等待開始</div>
     </div>
-  `,
+  `;
+      },
     )
     .join("");
 
@@ -483,32 +539,31 @@ async function startDownloadFlow(): Promise<void> {
 
   // Remove local listener setups. We will do this globally once.
 
-  // Build output dir with title subfolder
-  const outputDir = getOutputDir();
+  // Build output dir with title subfolder. Main process appends season folders.
+  const outputDir = getAnimeOutputDir();
 
-  // Get the active season name for subfolder creation
-  const seasonName = state.animeDetail.seasons[state.activeSeason]?.name || "";
+  for (const seasonGroup of groupBySeason(selectedEps)) {
+    const first = seasonGroup[0];
+    const result = await window.api.startDownload({
+      cartoonId: state.animeDetail.cartoonId,
+      progressId: first.progressId,
+      episodes: seasonGroup.map((item) => item.episode),
+      outputDir: outputDir,
+      detailUrl: state.animeDetail.detailUrl,
+      seasonName: first.seasonName,
+    });
 
-  // Start download
-  const result = await window.api.startDownload({
-    cartoonId: state.animeDetail.cartoonId,
-    episodes: selectedEps,
-    outputDir: outputDir,
-    detailUrl: state.animeDetail.detailUrl,
-    seasonName: seasonName,
-  });
-
-  if (!result.success) {
-    addLogLine(`[錯誤] ${result.error}`, true);
+    if (!result.success) {
+      addLogLine(`[錯誤] ${result.error}`, true);
+    }
   }
 }
 
-function updateEpisodeProgress(data: ProgressData, cartoonId: string): void {
-  const fill = document.getElementById(`fill-${cartoonId}-${data.episode}`);
-  const info = document.getElementById(`info-${cartoonId}-${data.episode}`);
-  const statusEl = document.getElementById(
-    `status-${cartoonId}-${data.episode}`,
-  );
+function updateEpisodeProgress(data: ProgressData, progressId: string): void {
+  const rowId = getProgressKey(progressId, data.episode);
+  const fill = document.getElementById(`fill-${rowId}`);
+  const info = document.getElementById(`info-${rowId}`);
+  const statusEl = document.getElementById(`status-${rowId}`);
 
   if (!fill || !info || !statusEl) return;
 
@@ -543,8 +598,9 @@ function updateOverallProgress(): void {
   if (state.downloadEpisodes.length === 0) return;
 
   let totalPercent = 0;
-  for (const [key, data] of state.episodeProgress.entries()) {
-    totalPercent += data.percent || 0;
+  for (const item of state.downloadEpisodes) {
+    const key = getProgressKey(item.progressId, item.episode.number);
+    totalPercent += state.episodeProgress.get(key)?.percent || 0;
   }
 
   const overall = totalPercent / state.downloadEpisodes.length;
@@ -592,7 +648,7 @@ dom.searchInput.addEventListener("keydown", (e: KeyboardEvent) => {
 function setupIpcListeners() {
   window.api.onDownloadProgress((data: ProgressData) => {
     if (!data.cartoonId) return;
-    const key = `${data.cartoonId}-${data.episode}`;
+    const key = getProgressKey(data.cartoonId, data.episode);
     state.episodeProgress.set(key, data);
     updateEpisodeProgress(data, data.cartoonId);
     updateOverallProgress();
@@ -611,10 +667,18 @@ function setupIpcListeners() {
     );
 
     // Check if ALL globally tracked episodes are done/skipped/failed
-    const allDone = Array.from(state.episodeProgress.values()).every(
-      (p) =>
-        p.status === "done" || p.status === "skipped" || p.status === "failed",
-    );
+    const allDone =
+      state.downloadEpisodes.length > 0 &&
+      state.downloadEpisodes.every((item) => {
+        const key = getProgressKey(item.progressId, item.episode.number);
+        const p = state.episodeProgress.get(key);
+        return (
+          !!p &&
+          (p.status === "done" ||
+            p.status === "skipped" ||
+            p.status === "failed")
+        );
+      });
 
     if (allDone) {
       state.isDownloading = false;

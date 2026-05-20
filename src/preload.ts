@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from "electron";
 
 interface ProgressData {
+  cartoonId?: string;
   episode: number;
   percent: number;
   downloaded?: string;
@@ -13,6 +14,7 @@ interface ProgressData {
 
 interface DownloadOptions {
   cartoonId: string;
+  progressId?: string;
   episodes: Array<{ number: number; title: string; href: string }>;
   outputDir: string;
   detailUrl: string;

@@ -39,6 +39,7 @@ interface AnimeDetail {
 
 interface DownloadOptions {
   cartoonId: string;
+  progressId?: string;
   episodes: Episode[];
   outputDir: string;
   detailUrl: string;

@@ -47,6 +47,7 @@ interface AnimeDetail {
 
 interface DownloadOptions {
   cartoonId: string;
+  progressId?: string;
   episodes: Episode[];
   outputDir: string;
   detailUrl: string;
@@ -475,6 +476,7 @@ function startDownload(win: BrowserWindow, options: DownloadOptions): void {
 
 function startFakeDownload(win: BrowserWindow, options: DownloadOptions): void {
   const { cartoonId, episodes } = options;
+  const progressId = options.progressId || cartoonId;
   win.webContents.send(
     "download-log",
     `[INFO] E2E fake download: ${cartoonId} (${episodes.length} episodes)`,
@@ -483,7 +485,7 @@ function startFakeDownload(win: BrowserWindow, options: DownloadOptions): void {
   episodes.forEach((episode, index) => {
     setTimeout(() => {
       win.webContents.send("download-progress", {
-        cartoonId,
+        cartoonId: progressId,
         episode: episode.number,
         percent: 50,
         status: "downloading",
@@ -494,7 +496,7 @@ function startFakeDownload(win: BrowserWindow, options: DownloadOptions): void {
 
     setTimeout(() => {
       win.webContents.send("download-progress", {
-        cartoonId,
+        cartoonId: progressId,
         episode: episode.number,
         percent: 100,
         status: "done",
@@ -517,6 +519,7 @@ function processQueue(): void {
   const current = downloadQueue[0]; // Peek at the first item
   const { win, options } = current;
   const { cartoonId, episodes, outputDir, seasonName } = options;
+  const progressId = options.progressId || cartoonId;
 
   // Add season subfolder to output directory
   let finalOutputDir = outputDir;
@@ -567,7 +570,9 @@ function processQueue(): void {
 
   console.log(`[Download] Running: ${pythonCmd} ${args.join(" ")}`);
 
-  const proc = spawn(pythonCmd, args, { env: { ...process.env } });
+  const proc = spawn(pythonCmd, args, {
+    env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+  });
   activeDownloadProcess = proc;
 
   let buffer = "";
@@ -589,7 +594,7 @@ function processQueue(): void {
 
       if (progressMatch) {
         win.webContents.send("download-progress", {
-          cartoonId,
+          cartoonId: progressId,
           episode: parseInt(progressMatch[1]),
           percent: parseFloat(progressMatch[2]),
           downloaded: progressMatch[3],
@@ -601,7 +606,7 @@ function processQueue(): void {
         const doneMatch = line.match(/Ep\.(\d+)/);
         if (doneMatch) {
           win.webContents.send("download-progress", {
-            cartoonId,
+            cartoonId: progressId,
             episode: parseInt(doneMatch[1]),
             percent: 100,
             status: "done",
@@ -618,7 +623,7 @@ function processQueue(): void {
             : 0;
         if (epNum > 0) {
           win.webContents.send("download-progress", {
-            cartoonId,
+            cartoonId: progressId,
             episode: epNum,
             percent: 100,
             status: "skipped",
@@ -628,7 +633,7 @@ function processQueue(): void {
         const failMatch = line.match(/Ep\.(\d+)/);
         if (failMatch) {
           win.webContents.send("download-progress", {
-            cartoonId,
+            cartoonId: progressId,
             episode: parseInt(failMatch[1]),
             percent: 0,
             status: "failed",
@@ -683,13 +688,10 @@ const DEFAULT_WINDOW_SIZE = {
 };
 
 function isWslRuntime(): boolean {
-  return (
-    process.platform === "linux" &&
-    Boolean(
-      process.env.WSL_DISTRO_NAME ||
-        process.env.WSL_INTEROP ||
-        process.env.WSL2_GUI_APPS_ENABLED,
-    )
+  return Boolean(
+    process.env.WSL_DISTRO_NAME ||
+      process.env.WSL_INTEROP ||
+      process.env.WSL2_GUI_APPS_ENABLED,
   );
 }
 

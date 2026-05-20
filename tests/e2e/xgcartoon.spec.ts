@@ -235,7 +235,40 @@ test.describe("西瓜卡通真站 E2E", () => {
     await expect(page.locator(".season-tab").nth(1)).toHaveClass(/active/);
     await expect(page.locator(".episode-item").first()).not.toHaveText(firstSeasonFirstEpisode ?? "");
     await expect(page.locator(".episode-item.selected")).toHaveCount(0);
-    await expect(page.locator("#btn-download span")).toHaveText("開始下載");
+    await expect(page.locator("#btn-download span")).toHaveText("下載 1 集");
+  });
+
+  test("跨季選取後下載會包含所有已選集數", async ({}, testInfo) => {
+    ({ app, page } = await launchApp(testInfo));
+
+    await searchAndOpenFirstResult(page, "蠟筆小新");
+    await expect
+      .poll(() => page.locator(".season-tab").count(), {
+        message: "expected multiple seasons",
+      })
+      .toBeGreaterThan(1);
+
+    const firstSeasonEpisode = (await page.locator(".episode-item").first().textContent())?.trim() ?? "";
+    await page.locator(".episode-item").first().click();
+    await expect(page.locator("#btn-download span")).toHaveText("下載 1 集");
+
+    await page.locator(".season-tab").nth(1).click();
+    await expect(page.locator(".season-tab").nth(1)).toHaveClass(/active/);
+    await expect(page.locator(".episode-item.selected")).toHaveCount(0);
+
+    const secondSeasonEpisode = (await page.locator(".episode-item").first().textContent())?.trim() ?? "";
+    expect(secondSeasonEpisode).not.toBe(firstSeasonEpisode);
+    await page.locator(".episode-item").first().click();
+    await expect(page.locator(".episode-item.selected")).toHaveCount(1);
+    await expect(page.locator("#btn-download span")).toHaveText("下載 2 集");
+
+    await startSelectedDownload(page);
+
+    await expect(page.locator(".dl-ep-item")).toHaveCount(2);
+    await expect(page.locator(".dl-ep-item .dl-ep-status")).toHaveText(["完成", "完成"]);
+    const rowTitles = await page.locator(".dl-ep-title").allTextContents();
+    expect(rowTitles[0]).toContain(firstSeasonEpisode);
+    expect(rowTitles[1]).toContain(secondSeasonEpisode);
   });
 
   test("連續下載兩部作品的多集時，下載進度列不會互相更新錯位", async ({}, testInfo) => {

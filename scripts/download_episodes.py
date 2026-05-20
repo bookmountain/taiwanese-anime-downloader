@@ -14,6 +14,20 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
+
+def _configure_process_encoding():
+    """Keep Windows code pages from crashing progress output with Unicode titles."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
+_configure_process_encoding()
+
 # Global reference to the file currently being downloaded, for cleanup on SIGTERM
 _current_download_path: Optional[str] = None
 
