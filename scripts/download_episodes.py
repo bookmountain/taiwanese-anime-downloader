@@ -512,21 +512,35 @@ class VideoDownloader:
             print("[ERROR] ffmpeg not found. Please install ffmpeg and add it to PATH.")
             sys.exit(1)
     
-    def download_all(self, start: int = 1, end: Optional[int] = None, 
-                     sequential: bool = False) -> tuple[int, int]:
-        """Download all episodes within the specified range."""
-        episodes = self.get_episode_list()
-        
-        if not episodes:
-            print("[ERROR] No episodes found!")
-            return 0, 0
-        
-        # Filter by range
-        if end is None:
-            end = len(episodes)
-        
-        episodes = [ep for ep in episodes if start <= ep.number <= end]
-        print(f"[INFO] Will download {len(episodes)} episodes (#{start} to #{end})")
+    def download_all(self, start: int = 1, end: Optional[int] = None,
+                     sequential: bool = False,
+                     episodes: Optional[list[Episode]] = None) -> tuple[int, int]:
+        """Download episodes.
+
+        When ``episodes`` is provided, download exactly those (in order). This is
+        how the app selects a specific season's episodes: the caller already knows
+        which chapters were picked, so we must not re-scrape and re-number the
+        whole series. Otherwise, fall back to scraping the page and filtering by
+        the ``start``..``end`` number range.
+        """
+        if episodes is None:
+            episodes = self.get_episode_list()
+
+            if not episodes:
+                print("[ERROR] No episodes found!")
+                return 0, 0
+
+            # Filter by range
+            if end is None:
+                end = len(episodes)
+
+            episodes = [ep for ep in episodes if start <= ep.number <= end]
+            print(f"[INFO] Will download {len(episodes)} episodes (#{start} to #{end})")
+        else:
+            if not episodes:
+                print("[ERROR] No episodes selected!")
+                return 0, 0
+            print(f"[INFO] Will download {len(episodes)} selected episodes")
         
         # Download episodes (video IDs extracted on-demand)
         print("\n[DOWNLOADING]")
@@ -589,22 +603,50 @@ def check_ffmpeg():
         return False
 
 
+def _read_manifest_episodes() -> list[Episode]:
+    """Read an explicit episode selection as JSON from stdin.
+
+    Each entry: {"number": int, "title": str, "url": str} where ``url`` is the
+    chapter's video page. Downloading the exact chapters the caller selected
+    avoids the season-mismatch bug where per-season episode numbers (e.g. S6
+    #1-#4) were treated as global indices into the whole series.
+    """
+    raw = sys.stdin.read()
+    data = json.loads(raw) if raw.strip() else []
+    episodes = []
+    for entry in data:
+        episodes.append(Episode(
+            number=int(entry["number"]),
+            title=VideoDownloader._sanitize_filename(str(entry.get("title", ""))),
+            page_url=str(entry["url"]),
+        ))
+    return episodes
+
+
 def main():
-    if len(sys.argv) < 3:
-        print("[ERROR] Usage: download_episodes.py <url> <output_dir> [start] [end]")
+    args = [a for a in sys.argv[1:] if a != "--manifest-stdin"]
+    use_manifest = "--manifest-stdin" in sys.argv
+
+    if len(args) < 2:
+        print("[ERROR] Usage: download_episodes.py <url> <output_dir> [start] [end] [--manifest-stdin]")
         sys.exit(1)
-        
-    url = sys.argv[1]
-    output_dir = sys.argv[2]
-    start = int(sys.argv[3]) if len(sys.argv) > 3 else 1
-    end = int(sys.argv[4]) if len(sys.argv) > 4 else None
-    
+
+    url = args[0]
+    output_dir = args[1]
+    start = int(args[2]) if len(args) > 2 else 1
+    end = int(args[3]) if len(args) > 3 else None
+
     if not check_ffmpeg():
         print("[ERROR] ffmpeg is not installed or not in PATH.")
         sys.exit(1)
-    
+
     downloader = VideoDownloader(base_url=url, output_dir=output_dir)
-    downloader.download_all(start=start, end=end)
+
+    if use_manifest:
+        episodes = _read_manifest_episodes()
+        downloader.download_all(episodes=episodes)
+    else:
+        downloader.download_all(start=start, end=end)
 
 
 if __name__ == "__main__":

@@ -128,6 +128,18 @@ const SEARCH_BASE = "https://tw.xgcartoon.com";
 const VIDEO_BASE = "https://tw.xgcartoon.com";
 const IMAGE_BASE = "https://static-a.xgcartoon.com";
 
+/** Resolve an episode's `href` (a goto-chapter link) to its video-page URL. */
+function buildChapterUrl(cartoonId: string, href: string): string {
+  if (href && href.includes("/video/")) {
+    return href.startsWith("http") ? href : `${VIDEO_BASE}${href}`;
+  }
+  const chapterMatch = href.match(/chapter_id=([a-zA-Z0-9]+)/);
+  if (chapterMatch) {
+    return `${VIDEO_BASE}/video/${cartoonId}/${chapterMatch[1]}.html`;
+  }
+  return `${VIDEO_BASE}/video/${cartoonId}/${href}.html`;
+}
+
 function decodeHtmlEntities(str: string): string {
   return str
     .replace(/&amp;/g, "&")
@@ -536,22 +548,17 @@ function processQueue(): void {
   }
   activeOutputDir = finalOutputDir;
 
-  // Build a video URL from the first episode
-  const firstEp = episodes[0];
-  let videoUrl: string;
+  // Build the chapter video-page URL for each selected episode. The Python
+  // script downloads exactly these chapters — we must NOT re-scrape and filter
+  // by episode number, because per-season numbers (e.g. Season 6 #1-#4) are not
+  // global indices and would resolve to the wrong season (Season 1 #1-#4).
+  const manifest = episodes.map((ep) => ({
+    number: ep.number,
+    title: ep.title,
+    url: buildChapterUrl(cartoonId, ep.href),
+  }));
 
-  if (firstEp.href && firstEp.href.includes("/video/")) {
-    videoUrl = firstEp.href.startsWith("http")
-      ? firstEp.href
-      : `${VIDEO_BASE}${firstEp.href}`;
-  } else {
-    const chapterMatch = firstEp.href.match(/chapter_id=([a-zA-Z0-9]+)/);
-    if (chapterMatch) {
-      videoUrl = `${VIDEO_BASE}/video/${cartoonId}/${chapterMatch[1]}.html`;
-    } else {
-      videoUrl = `${VIDEO_BASE}/video/${cartoonId}/${firstEp.href}.html`;
-    }
-  }
+  const videoUrl = manifest[0]?.url ?? `${VIDEO_BASE}/video/${cartoonId}/`;
 
   const pythonCmd = process.platform === "win32" ? "python" : "python3";
   const scriptPath = path.join(
@@ -560,13 +567,12 @@ function processQueue(): void {
     "download_episodes.py",
   );
 
-  const args: string[] = [scriptPath, videoUrl, finalOutputDir];
-
-  if (episodes.length > 0) {
-    const numbers = episodes.map((e) => e.number);
-    args.push(String(Math.min(...numbers)));
-    args.push(String(Math.max(...numbers)));
-  }
+  const args: string[] = [
+    scriptPath,
+    videoUrl,
+    finalOutputDir,
+    "--manifest-stdin",
+  ];
 
   console.log(`[Download] Running: ${pythonCmd} ${args.join(" ")}`);
 
@@ -574,6 +580,11 @@ function processQueue(): void {
     env: { ...process.env, PYTHONIOENCODING: "utf-8" },
   });
   activeDownloadProcess = proc;
+
+  // Hand the exact selection to the script over stdin (avoids command-line
+  // length limits for large seasons).
+  proc.stdin?.write(JSON.stringify(manifest));
+  proc.stdin?.end();
 
   let buffer = "";
 
