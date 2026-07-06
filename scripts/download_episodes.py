@@ -549,30 +549,27 @@ class VideoDownloader:
         skip_count = 0
         
         for idx, ep in enumerate(episodes, 1):
-            # Expected filename pattern
-            ep_prefix = f"{ep.number:03d}_"
-            filename = f"{ep_prefix}{self._sanitize_filename(ep.title)}.mp4"
+            # Expected output filename for THIS exact episode (number + title).
+            filename = f"{ep.number:03d}_{ep.title}.mp4"
             output_path = os.path.join(self.output_dir, filename)
-            
-            # Check if a file with this episode number already exists
-            existing_file = None
-            for f in os.listdir(self.output_dir):
-                if f.startswith(ep_prefix) and f.endswith('.mp4'):
-                    existing_file = os.path.join(self.output_dir, f)
-                    break
-            
-            if existing_file and os.path.exists(existing_file):
-                file_size = os.path.getsize(existing_file)
-                # Skip if file is > 150MB (reasonable video size)
-                if file_size > 150 * 1024 * 1024:
+
+            # Resume support: skip only if THIS episode's own file already exists
+            # and looks complete. Match the exact filename (not just the number
+            # prefix) so a different episode that happens to share the number —
+            # e.g. a stale file left in the folder — isn't mistaken for this one
+            # and cause the correct download to be wrongly skipped.
+            if os.path.exists(output_path):
+                file_size = os.path.getsize(output_path)
+                # Complete if recorded in metadata, or large enough to trust.
+                if self._is_complete(filename, output_path) or file_size > 150 * 1024 * 1024:
                     size_str = ProgressBar._format_size(file_size)
-                    print(f"  [{idx}/{len(episodes)}] SKIP {os.path.basename(existing_file)} ({size_str})")
+                    print(f"  [{idx}/{len(episodes)}] SKIP {filename} ({size_str})")
                     skip_count += 1
                     success_count += 1
                     continue
                 else:
-                    # File too small, likely incomplete - remove it
-                    os.remove(existing_file)
+                    # Incomplete leftover - remove and re-download.
+                    os.remove(output_path)
             
             # Download
             print(f"  [{idx}/{len(episodes)}] ", end="", flush=True)

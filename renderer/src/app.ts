@@ -486,8 +486,26 @@ async function startDownloadFlow(): Promise<void> {
 
   const shouldResetLog = state.downloadEpisodes.length === 0;
 
+  // Split selection into episodes not yet in the queue vs. re-selected ones.
+  // Each row's DOM id is `progressId-number`; appending a re-selected episode
+  // would create a duplicate row AND a colliding id (progress would render onto
+  // the first matching element). So we only append genuinely new episodes, and
+  // reset the existing rows for re-downloads to re-run in place.
+  const queuedKeys = new Set(
+    state.downloadEpisodes.map((item) =>
+      getProgressKey(item.progressId, item.episode.number),
+    ),
+  );
+  const freshEps = selectedEps.filter(
+    (item) =>
+      !queuedKeys.has(getProgressKey(item.progressId, item.episode.number)),
+  );
+  const repeatEps = selectedEps.filter((item) =>
+    queuedKeys.has(getProgressKey(item.progressId, item.episode.number)),
+  );
+
   // Track the *newly added* episodes globally
-  state.downloadEpisodes.push(...selectedEps);
+  state.downloadEpisodes.push(...freshEps);
   state.isDownloading = true;
 
   // Reset progress text (only overall text, bars are appended)
@@ -500,12 +518,30 @@ async function startDownloadFlow(): Promise<void> {
     state.episodeProgress.clear();
   }
 
+  // Reset the rows of re-selected episodes so they re-download in place.
+  for (const item of repeatEps) {
+    const rowId = getProgressKey(item.progressId, item.episode.number);
+    state.episodeProgress.delete(rowId);
+    const fill = document.getElementById(`fill-${rowId}`);
+    const info = document.getElementById(`info-${rowId}`);
+    const statusEl = document.getElementById(`status-${rowId}`);
+    if (fill) {
+      fill.style.width = "0%";
+      fill.className = "dl-ep-fill";
+    }
+    if (info) info.textContent = "等待開始";
+    if (statusEl) {
+      statusEl.className = "dl-ep-status";
+      statusEl.textContent = "等待中...";
+    }
+  }
+
   // Reset cancel button text
   const cancelSpan = dom.btnCancelDownload.querySelector("span");
   if (cancelSpan) cancelSpan.textContent = "取消下載";
 
-  // Append to the list instead of replacing
-  const newHtml = selectedEps
+  // Append only the genuinely new episodes to the list
+  const newHtml = freshEps
     .map(
       (item) => {
         const rowId = getProgressKey(item.progressId, item.episode.number);

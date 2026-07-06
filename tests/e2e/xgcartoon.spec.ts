@@ -271,6 +271,42 @@ test.describe("西瓜卡通真站 E2E", () => {
     expect(rowTitles[1]).toContain(secondSeasonEpisode);
   });
 
+  test("重複選取已在佇列的集數時不會產生重複列，並就地重新下載", async ({}, testInfo) => {
+    ({ app, page } = await launchApp(testInfo));
+
+    await searchAndOpenFirstResult(page, "海賊王");
+
+    // 第一批：第 1、2 集
+    await page.locator('.episode-item[data-num="1"]').first().click();
+    await page.locator('.episode-item[data-num="2"]').first().click();
+    await expect(page.locator(".episode-item.selected")).toHaveCount(2);
+    await startSelectedDownload(page);
+    await expect(page.locator(".dl-ep-item")).toHaveCount(2);
+    await expect(page.locator(".dl-ep-item .dl-ep-status")).toHaveText([
+      "完成",
+      "完成",
+    ]);
+
+    // 回到詳情，改選第 2、3 集（第 2 集與第一批重疊）
+    await page.locator("#btn-back").click();
+    await expect(page.locator("#view-detail")).toHaveClass(/active/);
+    await page.locator('.episode-item[data-num="1"]').first().click(); // 取消第 1 集
+    await page.locator('.episode-item[data-num="3"]').first().click(); // 加選第 3 集
+    await expect(page.locator(".episode-item.selected")).toHaveCount(2);
+    await expect(page.locator("#btn-download")).toBeEnabled();
+    await page.locator("#btn-download").click();
+    await expect(page.locator("#view-download")).toHaveClass(/active/);
+
+    // 第 2 集不應重複：總共 3 列（1、2、3），不是 4 列
+    await expect(page.locator(".dl-ep-item")).toHaveCount(3);
+    await expect(page.locator("#download-title")).toContainText("共 3 集");
+    await expect(page.locator(".dl-ep-item .dl-ep-status")).toHaveText([
+      "完成",
+      "完成",
+      "完成",
+    ]);
+  });
+
   test("連續下載兩部作品的多集時，下載進度列不會互相更新錯位", async ({}, testInfo) => {
     ({ app, page } = await launchApp(testInfo));
 
