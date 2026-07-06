@@ -7,3 +7,5 @@ Thumbs.db
 .venv
 test-results/
 playwright-report/
+__pycache__/
+*.pyc
